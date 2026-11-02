@@ -1,0 +1,13 @@
+# Example per-repository config: copy to <repo>/.dsh/report-readability.yml
+mode: advisory          # advisory = observe only; enforce = steer a rewrite on failure
+lang: auto
+budget: 2               # max undefined identifiers tolerated before FAIL (enforce)
+packs:
+  - generic
+  - ste-zh
+  - ste-en
+  - mlir                # adds tensor-type allowlist (f16/i32/x86/L2 ...)
+allowlist:
+  - Triton
+  - Cube
+  - BarAll

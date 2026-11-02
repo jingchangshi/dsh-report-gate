@@ -2,3 +2,7 @@ node_modules/
 dist/
 *.log
 .DS_Store
+
+# Ship the example per-repo config even if a global ignore skips .dsh/
+!examples/.dsh/
+!examples/.dsh/report-readability.yml
