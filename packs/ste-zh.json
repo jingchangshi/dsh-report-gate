@@ -1,0 +1,14 @@
+{
+  "id": "ste-zh",
+  "description": "简化技术中文规则（改编自 hai-simplified-technical / ASD-STE100）：含糊词、包装动词、套话、句长、的字密度、标点。",
+  "langs": ["zh"],
+  "builtins": ["sentenceLength", "deCount", "punctSpacing"],
+  "rules": [
+    { "id": "1.4", "level": "hard", "message": "含糊词：写成数字、名称或条件", "pattern": "适当|有关的|一定程度上?|较为|基本上|若干|显著|大幅|明显", "langs": ["zh"] },
+    { "id": "1.4", "level": "soft", "message": "“相关”常是含糊词，写出是哪些", "pattern": "相关(?![系性])", "langs": ["zh"] },
+    { "id": "3.1", "level": "hard", "message": "包装动词：把名词改回动词", "pattern": "进行|加以|予以|做出|实现了?对[^。；，]{1,20}的", "langs": ["zh"] },
+    { "id": "3.3", "level": "soft", "message": "陈述事实不用“正在”", "pattern": "正在", "langs": ["zh"] },
+    { "id": "3.4", "level": "soft", "message": "写要求建议用 应/不应/宜/不宜/可/不必（不是要求可保留）", "pattern": "必须|务必|最好|尽量|建议", "langs": ["zh"] },
+    { "id": "9.4", "level": "soft", "message": "套话：写出具体做了什么", "pattern": "开箱即用|无缝|一劳永逸|飞跃|极致|赋能|抓手|闭环|全方位|强大的", "langs": ["zh"] }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "id": "ste-en",
+  "description": "Simplified Technical English subset (adapted from ASD-STE100): vague words, wrapper verbs, filler, sentence length.",
+  "langs": ["en"],
+  "builtins": ["sentenceLength", "punctSpacing"],
+  "rules": [
+    { "id": "1.4", "level": "hard", "message": "vague word: give a number, a name or a condition", "pattern": "\\b(appropriate(ly)?|relevant|various|significant(ly)?|substantial(ly)?|a number of|reasonabl[ey]|fairly|quite|somewhat|basically|essentially)\\b", "flags": "i", "langs": ["en"] },
+    { "id": "3.1", "level": "hard", "message": "wrapper verb: turn the noun back into the verb", "pattern": "\\b(perform(s|ed|ing)?|carr(y|ies|ied|ying) out|conduct(s|ed|ing)?)\\b", "flags": "i", "langs": ["en"] },
+    { "id": "9.4", "level": "soft", "message": "filler or marketing word: state the fact", "pattern": "\\b(simply|just|easily|obviously|clearly|seamless(ly)?|leverag(e|es|ed|ing)|out of the box|under the hood|robust|powerful)\\b", "flags": "i", "langs": ["en"] }
+  ]
+}

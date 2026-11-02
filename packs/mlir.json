@@ -1,0 +1,5 @@
+{
+  "id": "mlir",
+  "description": "MLIR / hardware primitives allowlist, so tensor types, cache levels and driver stages are not flagged as internal labels.",
+  "allowlist": ["f16", "f32", "f64", "bf16", "i8", "i16", "i32", "i64", "u8", "u16", "u32", "u64", "b8", "b16", "x86", "l1", "l2", "l3", "cc1", "o0", "o1", "o2", "o3", "v1", "v2", "v3", "v4", "h1", "h2"]
+}
