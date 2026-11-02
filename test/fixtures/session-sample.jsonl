@@ -1,0 +1,5 @@
+{"type": "session", "version": 4, "id": "sample"}
+{"type": "user/message", "seq": 9, "data": {"role": "user", "source": {"kind": "user"}, "content": [{"type": "text", "text": "给 Native 补充 Triton -replexitval 缺口；A3 Cube 的 BarAll 需要补 cube 侧参数。"}]}}
+{"type": "user/message", "seq": 500, "data": {"role": "user", "source": {"kind": "agent-message", "form": "relay", "senderSessionId": "x"}, "content": [{"type": "text", "text": "Team message from architect-review: policy 结果必须是 bundles 和 eligibility，不要用空 bundle 表示未知。policy 要显式，policy 不能含糊，policy 每处都要写清。eligibility 也要显式，eligibility 不能沿用旧值，eligibility 要在报告里定义。policy 与 eligibility 必须分开，policy 和 eligibility 都不能省略。"}]}}
+{"type": "assistant/message", "seq": 600, "data": {"turn": 1, "content": [{"type": "text", "text": "已确认：先修 M8 崩溃，再谈拒绝。"}]}}
+{"type": "assistant/message", "seq": 900, "data": {"turn": 1, "content": [{"type": "text", "text": "① 采纳，且用 M5 强化：policy 结果必须是 {bundles, eligibility}，不能再用空 bundle 表示未知。M6、M7 见下，S0 是第一步，D2 另议。"}]}}
