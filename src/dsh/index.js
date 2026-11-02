@@ -1,99 +1,83 @@
-/**
- * DSH integration adapter. Wires the engine into a live session:
- *  - a guard on `agent/turn-stopping` (turn-end) that steers a rewrite, and
- *  - a `/report` command for a manual check.
- *
- * Design notes:
- *  - Fail-open. A turn-stopping listener that throws aborts the turn, so every
- *    path here is wrapped: on any error we log and return, never throw.
- *  - Human-facing only. Subagent sessions (header.origin === 'subagent') and
- *    backstage messages are skipped; only the turn's ending assistant text is checked.
- *  - Advisory by default. Only `mode: enforce` injects a rewrite; advisory just observes.
- *  - The heavy lifting is in ../engine.js (pure, tested). This file is a thin shell;
- *    if your DSH version exposes session events / steer / commands differently, adjust
- *    only the small accessor helpers below.
- */
-export const name = 'report-gate';
+/** DSH adapter: inspect completed responses and expose the last result through /report. */
+import { createUserMessage } from '@deepseek-ai/dsh-llm';
+import { checkReport } from '../engine.js';
+import { loadPacks, loadConfigFromDir, mergeConfig, DEFAULT_CONFIG, validateConfig } from '../config.js';
+import { textOf, turnAssistantText, lastAssistantText } from '../events.js';
+import { formatResult } from '../report.js';
 
-export async function apply(ctx, config = {}) {
-  try {
-    await install(ctx, config);
-  } catch (e) {
-    try { ctx.logger?.warn?.(`report-gate: failed to install: ${e?.message}`); } catch { /* ignore */ }
+export const name = 'report-gate';
+export const inject = ['commands'];
+
+function rewriteMessage(r) {
+  const lines = ['请针对下列可读性问题重新汇报，保留事实、条件和不确定性。'];
+  if (r.tier1.length) lines.push(`未解释的代号：${r.tier1.slice(0, 12).join('、')}。请删除或解释其实际含义。`);
+  if (r.tier2a.length) lines.push(`可能需要解释的标识符：${r.tier2a.slice(0, 8).join('、')}。`);
+  for (const hit of r.styleHits.filter((h) => h.level === 'hard').slice(0, 5)) {
+    lines.push(`第 ${hit.line} 行：${hit.message}${hit.snippet ? `（${hit.snippet}）` : ''}`);
   }
+  return lines.join('\n');
 }
 
-async function install(ctx, config) {
-  const { checkReport } = await import('../engine.js');
-  const { loadPacks, loadConfigFromDir, mergeConfig, DEFAULT_CONFIG } = await import('../config.js');
-  const { textOf, turnAssistantText, lastAssistantText } = await import('../events.js');
+/** Resolve workspace configuration for each agent, not the Web process cwd. */
+function sessionDirectory(session, events) {
+  const change = events.findLast((event) => event.type === 'working-directory/change' && typeof event.data?.cwd === 'string');
+  return change?.data.cwd ?? session.header.cwd ?? process.cwd();
+}
 
-  const repoCfg = safe(() => loadConfigFromDir(process.cwd()), {});
-  const cfg = mergeConfig(DEFAULT_CONFIG, repoCfg, config || {});
-  const packs = loadPacks(cfg.packs);
-  const retryLimit = cfg.retryLimit ?? 2;
+export function apply(ctx, config = {}) {
   const attempts = new WeakMap();
+  const lastChecks = new WeakMap();
 
-  function readEvents(session) {
-    if (!session) return null;
-    for (const k of ['snapshotEvents', 'events', 'allEvents']) {
-      try {
-        const v = session[k];
-        if (typeof v === 'function') { const r = v.call(session); if (Array.isArray(r)) return r; }
-        else if (Array.isArray(v)) return v;
-      } catch { /* try next */ }
-    }
-    return null;
-  }
-
-  async function checkTurn(agent, turn) {
-    if (!agent || !agent.session) return null;
-    const header = agent.session.header || {};
-    if (header.origin === 'subagent') return null;
-    const events = readEvents(agent.session);
-    if (!events) return null;
-    const target = turnAssistantText(events, turn) || lastAssistantText(events);
+  function check(agent, turn) {
+    if (!agent?.session || agent.session.header.origin === 'subagent') return null;
+    const events = agent.session.snapshotEvents();
+    const target = turn === undefined ? lastAssistantText(events) : turnAssistantText(events, turn);
     if (!target) return null;
-    return { target, result: checkReport(textOf(target), { events, reportSeq: target.seq, config: cfg, packs }) };
+    const repoCfg = loadConfigFromDir(sessionDirectory(agent.session, events));
+    const cfg = validateConfig(mergeConfig(DEFAULT_CONFIG, repoCfg, config));
+    const packs = loadPacks(cfg.packs);
+    return { turn: target.data.turn ?? null, seq: target.seq, cfg, result: checkReport(textOf(target), { events, reportSeq: target.seq, config: cfg, packs }) };
   }
 
-  function rewriteMessage(r) {
-    const lines = ['你上一条是给人看的最终汇报，但里面有读者无法理解的内部代号或未解释词。请重写后再交。'];
-    if (r.tier1.length) lines.push(`Tier-1 内部代号（必须在报告内就地解释，如 “M5 = 第 5 条实测”，或删除）：${r.tier1.join('、')}`);
-    if (r.tier2a.length) lines.push(`从未对人出现过的标识符（放进附录名词表并解释）：${r.tier2a.slice(0, 12).join('、')}`);
-    if (r.tier3.length) lines.push(`可能是术语的普通词（请判断是否需解释）：${r.tier3.map((x) => x.word).join('、')}`);
-    lines.push('结构：一句话结论（不含代号）→ 需要读者决定的事 → 名词表（覆盖每个代号）→ 技术细节放附录。不要删事实。');
-    return lines.join('\n');
-  }
-
-  ctx.on?.('agent/turn-stopping', async ({ agent, turn }) => {
+  ctx.on('agent/turn-stopping', ({ agent, turn }) => {
     try {
-      const r = await checkTurn(agent, turn);
-      if (!r || r.result.verdict !== 'FAIL') return;
-      if (cfg.mode !== 'enforce') return;
-      const n = attempts.get(agent) || 0;
-      if (n >= retryLimit) return;
-      attempts.set(agent, n + 1);
-      const { createUserMessage } = await import('@deepseek-ai/dsh-llm');
-      agent.steer(createUserMessage({ content: [{ type: 'text', text: rewriteMessage(r.result) }], source: { kind: 'report-gate' } }));
-      ctx.logger?.info?.(`report-gate: steered rewrite (attempt ${n + 1}/${retryLimit})`);
-    } catch (e) {
-      try { ctx.logger?.warn?.(`report-gate: guard error ignored: ${e?.message}`); } catch { /* ignore */ }
+      const entry = check(agent, turn);
+      if (!entry) return;
+      lastChecks.set(agent, entry);
+      ctx.logger.info(`report-gate: session ${agent.session.id} turn ${turn}, ${entry.result.verdict} (${entry.cfg.mode})`);
+      if (entry.cfg.mode !== 'enforce' || entry.result.verdict !== 'FAIL') return;
+      const previous = attempts.get(agent);
+      const count = previous?.turn === turn ? previous.count : 0;
+      if (count >= entry.cfg.retryLimit) {
+        ctx.logger.warn(`report-gate: session ${agent.session.id} turn ${turn} reached the rewrite limit`);
+        entry.exhausted = true;
+        return;
+      }
+      agent.steer(createUserMessage({
+        content: [{ type: 'text', text: rewriteMessage(entry.result) }],
+        source: { kind: 'report-gate', form: 'notice', summary: '报告可读性检查要求重写' },
+      }));
+      attempts.set(agent, { turn, count: count + 1 });
+    } catch (error) {
+      lastChecks.set(agent, { error: String(error?.message ?? error), turn });
+      ctx.logger.warn(`report-gate: automatic check failed: ${String(error?.message ?? error)}`);
     }
   });
 
-  try {
-    ctx.commands?.register?.({
-      name: 'report',
-      description: "Check the readability of this turn's human-facing report.",
-      handler: async ({ agent } = {}) => {
-        const r = await checkTurn(agent || ctx.get?.('agents')?.current?.(), undefined);
-        if (!r) return { text: 'report-gate: 没有找到可检查的汇报正文。' };
-        const { formatResult } = await import('../report.js');
-        return { text: formatResult(r.result) };
-      },
-    });
-  } catch { /* commands service may be absent */ }
+  ctx.commands.register({
+    name: 'report',
+    description: '查看最近一次自动可读性检查；未执行时检查最近一条助手回复。',
+    handler: ({ agent }) => {
+      try {
+        const automatic = lastChecks.get(agent);
+        const entry = automatic && !automatic.error ? automatic : check(agent);
+        if (!entry) return { kind: 'error', text: '没有找到可检查的助手回复。' };
+        const origin = automatic && !automatic.error ? '最近一次自动检查' : '当前手动检查（此 Agent 没有可用的自动检查记录）';
+        const suffix = entry.exhausted ? '\n\n已达到重写次数上限，原报告仍已显示。' : '';
+        return { kind: 'success', text: `${origin}：第 ${entry.turn ?? '未知'} 轮，消息序号 ${entry.seq}。\n\n${formatResult(entry.result)}${suffix}` };
+      } catch (error) {
+        return { kind: 'error', text: `report-gate 检查失败：${String(error?.message ?? error)}` };
+      }
+    },
+  });
 }
-
-function safe(fn, fallback) { try { return fn(); } catch { return fallback; } }
