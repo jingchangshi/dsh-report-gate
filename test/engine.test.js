@@ -26,14 +26,15 @@ test('a label defined in place is not a Tier-1 violation (satisfiable)', () => {
   assert.ok(!r.tier1.includes('D2'));
   assert.equal(r.verdict, 'PASS');
 });
-test('an allowlist pack suppresses type-token false positives', () => {
-  const report = '类型 f16 f32 i32 x86 L2 都是原语。';
+test('an allowlist pack suppresses label-shaped primitive tokens', () => {
+  const report = '依赖 L2 与 f16。';
   const labels = { id: 'lp', labelPatterns: ['(?<![A-Za-z0-9\\\\-])[A-Za-z]{1,2}\\d{1,2}(?![A-Za-z0-9])'], allowlist: [] };
   const rNo = checkReport(report, { events: [], config: { lang: 'zh' }, packs: [labels] });
-  assert.ok(rNo.tier1.includes('f16'), 'f16 matches label shape without allowlist');
+  assert.ok(rNo.tier1.includes('L2'), 'L2 is label-shaped without the allowlist');
+  assert.ok(!rNo.tier1.includes('f16'), 'lowercase letter+digits are treated as evidence');
   const allowPack = { id: 'mlir', labelPatterns: [], allowlist: loadPacks(['mlir'])[0].allowlist };
   const rOk = checkReport(report, { events: [], config: { lang: 'zh' }, packs: [labels, allowPack] });
-  assert.ok(!rOk.tier1.includes('f16'), 'allowlist removes type tokens');
+  assert.ok(!rOk.tier1.includes('L2'), 'allowlist removes the primitive');
 });
 test('compound identifiers require every component to be known', () => {
   const events = [{ seq: 1, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'Known' }] } }];
@@ -67,4 +68,26 @@ test('a clean, contract-compliant report PASSes', () => {
   const target = lastAssistantText(events);
   const r = checkReport(textOf(target), { events, reportSeq: target.seq, config: { lang: 'zh' }, packs: loadPacks(['generic', 'ste-zh', 'mlir']) });
   assert.equal(r.verdict, 'PASS', JSON.stringify({ t1: r.tier1, t2: r.tier2a, style: r.styleHits }));
+});
+
+test('inline code and evidence-shaped tokens are not readability findings', () => {
+  const report = '参照 `CMake`、`IR`、`AIV`、`18.1.3`、`{{ACCOUNT_x}}`、`DeviceCompileCommand.cpp`、`s4`、`multi3` 与 debian10 的说明。';
+  const r = checkReport(report, { events: [], config: { lang: 'zh' }, packs: loadPacks(['generic']) });
+  assert.deepEqual(r.tier1, []);
+  assert.deepEqual(r.tier2a, []);
+  assert.deepEqual(r.tier2b, []);
+  assert.equal(r.verdict, 'PASS');
+});
+test('uppercase labels remain Tier-1 while lowercase code ids do not', () => {
+  const r = checkReport('见 M5 与 s5。', { events: [], config: { lang: 'zh' }, packs: loadPacks(['generic']) });
+  assert.deepEqual(r.tier1, ['M5']);
+});
+test('brace term lists still surface when events make them unknown', () => {
+  const events = Array.from({ length: 6 }, (_, i) => ({
+    type: 'agent-message', seq: i + 1,
+    data: { message: { content: [{ type: 'text', text: 'bundles eligibility policy。' }] } },
+  }));
+  const r = checkReport('{bundles, eligibility}', { events, reportSeq: 100, config: { lang: 'zh' }, packs: loadPacks(['generic']) });
+  const words = r.tier3.map((x) => x.word);
+  assert.ok(words.includes('bundles') || words.includes('eligibility') || r.tier2a.includes('bundles') || r.tier2a.includes('eligibility'));
 });

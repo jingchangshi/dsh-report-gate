@@ -1,6 +1,6 @@
 {
   "name": "dsh-report-gate",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Readability gate for AI task reports: catch undefined internal labels and jargon before a report reaches a human (DSH plugin + standalone CLI).",
   "type": "module",
   "license": "MIT",

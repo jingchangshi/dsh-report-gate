@@ -9,12 +9,12 @@ export const name = 'report-gate';
 export const inject = ['commands'];
 
 function rewriteMessage(r) {
-  const lines = ['请针对下列可读性问题重新汇报，保留事实、条件和不确定性。'];
+  const lines = ['请只针对下列问题重新汇报，保留事实、条件和不确定性。'];
   if (r.tier1.length) lines.push(`未解释的代号：${r.tier1.slice(0, 12).join('、')}。请删除或解释其实际含义。`);
-  if (r.tier2a.length) lines.push(`可能需要解释的标识符：${r.tier2a.slice(0, 8).join('、')}。`);
   for (const hit of r.styleHits.filter((h) => h.level === 'hard').slice(0, 5)) {
     lines.push(`第 ${hit.line} 行：${hit.message}${hit.snippet ? `（${hit.snippet}）` : ''}`);
   }
+  lines.push('代码、文件名、版本号、环境变量等证据不需要逐条解释。');
   return lines.join('\n');
 }
 

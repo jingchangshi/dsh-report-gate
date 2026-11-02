@@ -11,3 +11,5 @@ allowlist:
   - Triton
   - Cube
   - BarAll
+ignorePatterns:
+  - '^(CMake|IR|AscendNPU-IR)$'

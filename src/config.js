@@ -10,8 +10,9 @@ export const DEFAULT_CONFIG = {
   mode: 'advisory', // 'advisory' | 'enforce'
   lang: 'auto', // 'auto' | 'zh' | 'en'
   budget: 2, // max undefined identifiers tolerated in enforce mode
-  labelPatterns: ['(?<![A-Za-z0-9\\-])[A-Za-z]{1,2}\\d{1,2}(?![A-Za-z0-9])'],
+  labelPatterns: ['(?<![A-Za-z0-9\\-])[A-Z][A-Za-z]?\\d{1,2}(?![A-Za-z0-9])'],
   allowlist: [],
+  ignorePatterns: [],
   packs: ['generic', 'ste-zh', 'ste-en'],
   semantic: { enabled: false, model: null },
   retryLimit: 2,
@@ -49,10 +50,10 @@ export function validateConfig(config) {
   for (const key of ['budget', 'retryLimit']) {
     if (!Number.isSafeInteger(config[key]) || config[key] < 0) throw new Error(`report-gate: ${key} must be a nonnegative integer`);
   }
-  for (const key of ['packs', 'allowlist', 'labelPatterns']) {
+  for (const key of ['packs', 'allowlist', 'labelPatterns', 'ignorePatterns']) {
     if (!Array.isArray(config[key]) || config[key].some((item) => typeof item !== 'string')) throw new Error(`report-gate: ${key} must be an array of strings`);
   }
-  for (const pattern of config.labelPatterns) new RegExp(pattern);
+  for (const pattern of [...config.labelPatterns, ...config.ignorePatterns]) new RegExp(pattern);
   if (config.semantic?.enabled) throw new Error('report-gate: semantic review is not implemented');
   return config;
 }

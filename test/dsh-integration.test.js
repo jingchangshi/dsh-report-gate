@@ -122,3 +122,11 @@ test('a host-level listener receives agent events from a preset-scoped agent', a
     await agentScope.dispose(); await preset.dispose(); await sibling.dispose(); await host.fiber.dispose();
   }
 });
+
+test('advisory identifiers alone do not trigger a rewrite', async () => {
+  const { ctx, agent, adapter } = await setup('enforce', ['参见 WidgetRegistry 与 CMake。']);
+  try {
+    await runTurn(ctx, agent);
+    assert.equal(adapter.requests.length, 1, 'Tier-2 alone must not steer');
+  } finally { await ctx.fiber.dispose(); }
+});

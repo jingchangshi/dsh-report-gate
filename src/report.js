@@ -17,13 +17,15 @@ export function formatResult(r) {
     L.push('');
   }
   if (r.tier2a.length) {
-    L.push('## Tier-2a：其它标识符，人从未见过（建议放进附录名词表）');
-    for (const t of r.tier2a) L.push(`- \`${t}\``);
+    L.push('## Tier-2a：其它标识符（仅供参考，不影响 PASS/FAIL）');
+    for (const t of r.tier2a.slice(0, 20)) L.push(`- \`${t}\``);
+    if (r.tier2a.length > 20) L.push(`- …（还有 ${r.tier2a.length - 20} 个）`);
     L.push('');
   }
   if (r.tier2b.length) {
-    L.push('## Tier-2b：见过但从未解释的标识符');
-    for (const t of r.tier2b) L.push(`- \`${t}\``);
+    L.push('## Tier-2b：见过但未见解释的标识符（仅供参考，不影响 PASS/FAIL）');
+    for (const t of r.tier2b.slice(0, 20)) L.push(`- \`${t}\``);
+    if (r.tier2b.length > 20) L.push(`- …（还有 ${r.tier2b.length - 20} 个）`);
     L.push('');
   }
   if (r.tier3.length) {
