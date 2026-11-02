@@ -1,7 +1,7 @@
 # Example per-repository config: copy to <repo>/.dsh/report-readability.yml
 mode: advisory          # advisory = observe only; enforce = steer a rewrite on failure
 lang: auto
-budget: 2               # max undefined identifiers tolerated before FAIL (enforce)
+budget: 2               # advisory display budget for undefined identifiers (does not fail)
 packs:
   - generic
   - ste-zh

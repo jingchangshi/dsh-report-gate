@@ -31,7 +31,7 @@ dsh plugin --profile web add github:jingchangshi/dsh-report-gate
 ```yaml
 mode: advisory           # advisory 或 enforce
 lang: auto               # auto、zh 或 en
-budget: 2                # 未解释标识符的提示预算
+budget: 2                # 未解释标识符的提示预算（不影响 PASS/FAIL）
 retryLimit: 2            # 每轮最多重写次数
 packs: [generic, ste-zh, ste-en, mlir]
 allowlist: [Triton, Cube]
