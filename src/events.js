@@ -61,7 +61,7 @@ export function turnAssistantText(events, turn) {
   for (const e of events) {
     if (!e || e.type !== 'assistant/message' || !textOf(e).trim()) continue;
     const t = e.data && e.data.turn;
-    if (turn === undefined || t === undefined || t === turn) target = e;
+    if (turn === undefined || t === turn) target = e;
   }
   return target;
 }

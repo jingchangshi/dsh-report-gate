@@ -18,3 +18,16 @@ test('ledger keeps backstage-only words out of the human channel', () => {
   assert.ok(!l.humanVisible.has('policy'), 'policy never shown to human before report');
   assert.ok((l.internalFreq.get('policy') || 0) >= 3, 'policy is heavy in backstage');
 });
+
+test('ledger excludes backstage text at and after the report boundary', () => {
+  const event = (seq, text) => ({ seq, type: 'tool/result', data: { content: [{ type: 'text', text }] } });
+  const l = buildLedger([
+    event(1, 'earlier shared'), event(2, 'boundary shared'), event(3, 'future shared'),
+  ], 2);
+  assert.equal(l.internalFreq.get('shared'), 1);
+  assert.equal(l.internalFreq.get('boundary'), undefined);
+  assert.equal(l.internalFreq.get('future'), undefined);
+  assert.deepEqual(l.provenance.get('shared'), { seq: 1, kind: 'tool/result' });
+  assert.equal(l.provenance.has('boundary'), false);
+  assert.equal(l.provenance.has('future'), false);
+});

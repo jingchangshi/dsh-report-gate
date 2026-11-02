@@ -27,7 +27,7 @@ export function buildLedger(events, reportSeq = Infinity) {
   const provenance = new Map();
 
   for (const e of events) {
-    if (!e || e.seq === undefined) continue;
+    if (!e || e.seq === undefined || e.seq >= reportSeq) continue;
     const t = textOf(e);
     const kind = sourceKind(e);
 

@@ -10,7 +10,8 @@ import { DEFAULT_CONFIG, mergeConfig } from './config.js';
 
 /** Strip fenced code and code-like inline spans; keep term/bullet spans like `{a, b}`. */
 export function proseOf(t) {
-  let s = String(t).replace(/```[\s\S]*?```/g, ' ');
+  let s = String(t).replace(/^ {0,3}(~{3,})[^\r\n]*\r?\n[\s\S]*?^ {0,3}\1~*[ \t]*\r?$/gm, ' ');
+  s = s.replace(/```[\s\S]*?```/g, ' ');
   s = s.replace(/`([^`]*)`/g, (m, c) => {
     if (c.startsWith('-') || c.includes('=') || c.includes('/') || /\s-\S/.test(c) || /\s['"]/.test(c)) return ' ';
     return ' ' + c + ' ';
@@ -26,7 +27,7 @@ function partGrounded(tok, state, allow) {
   if (!/[-/.]/.test(tok)) return false;
   const parts = tok.split(/[-/.]/).filter(Boolean);
   if (parts.length < 2) return false;
-  return parts.some((p) => state.grounded.has(p) || state.humanSaid.has(p) || allow.has(p.toLowerCase()));
+  return parts.every((p) => state.grounded.has(p) || state.humanSaid.has(p) || allow.has(p.toLowerCase()));
 }
 
 /**

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadSession } from '../src/session.js';
 import { lastAssistantText, textOf } from '../src/events.js';
-import { checkReport } from '../src/engine.js';
+import { checkReport, proseOf } from '../src/engine.js';
 import { loadPacks } from '../src/config.js';
 
 const ROOT = new URL('..', import.meta.url);
@@ -35,6 +35,33 @@ test('an allowlist pack suppresses type-token false positives', () => {
   const rOk = checkReport(report, { events: [], config: { lang: 'zh' }, packs: [labels, allowPack] });
   assert.ok(!rOk.tier1.includes('f16'), 'allowlist removes type tokens');
 });
+test('compound identifiers require every component to be known', () => {
+  const events = [{ seq: 1, type: 'user/message', data: { source: { kind: 'user' }, content: [{ type: 'text', text: 'Known' }] } }];
+  const r = checkReport('Known.UnknownThing Known.Allowed', {
+    events, reportSeq: 2, config: { allowlist: ['Allowed'] },
+  });
+  assert.ok(r.tier2a.includes('Known.UnknownThing'));
+  assert.ok(!r.tier2a.includes('Known.Allowed'));
+});
+
+test('tilde fenced blocks are excluded from prose and identifier checks', () => {
+  const report = '之前\n~~~js\nHiddenThing42\n~~~~\n之后 VisibleThing42';
+  const prose = proseOf(report);
+  assert.ok(!prose.includes('HiddenThing42'));
+  assert.ok(prose.includes('之前') && prose.includes('VisibleThing42'));
+  const r = checkReport(report, { events: [] });
+  assert.ok(!r.tier2a.includes('HiddenThing42'));
+  assert.ok(r.tier2a.includes('VisibleThing42'));
+});
+
+test('future backstage frequency does not create a Tier-3 finding', () => {
+  const events = [1, 2, 3, 4, 5, 6].map((seq) => ({
+    seq, type: 'tool/result', data: { content: [{ type: 'text', text: 'policy' }] },
+  }));
+  const r = checkReport('policy', { events, reportSeq: 2 });
+  assert.ok(!r.tier3.some((x) => x.word === 'policy'));
+});
+
 test('a clean, contract-compliant report PASSes', () => {
   const events = loadSession(p('test/fixtures/session-clean.jsonl'));
   const target = lastAssistantText(events);
