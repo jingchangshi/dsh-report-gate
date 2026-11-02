@@ -4,6 +4,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { parse as parseYaml } from 'yaml';
 
 export const DEFAULT_CONFIG = {
   mode: 'advisory', // 'advisory' | 'enforce'
@@ -19,67 +20,12 @@ export const DEFAULT_CONFIG = {
 const ROOT_PACKS = new URL('../packs/', import.meta.url);
 const CONFIG_FILES = ['.dsh/report-readability.yml', '.dsh/report-readability.yaml', '.dsh/report-readability.json'];
 
-/** Parse the tiny YAML subset used by our config: scalars, `- ` lists, one nesting level, inline [a, b]. */
+/** Parse a YAML configuration document. */
 export function parseSimpleYaml(text) {
-  const toks = [];
-  for (const raw of String(text).replace(/\r/g, '').split('\n')) {
-    const noComment = raw.replace(/\s+#.*$/, '');
-    if (!noComment.trim() || noComment.trim().startsWith('#')) continue;
-    toks.push({ indent: raw.match(/^\s*/)[0].length, content: noComment.trim() });
-  }
-  let i = 0;
-  const kv = (s) => {
-    const k = s.indexOf(':');
-    if (k < 0) return null;
-    return [s.slice(0, k).trim(), s.slice(k + 1).trim()];
-  };
-  const scalar = (v) => {
-    if (v === 'true') return true;
-    if (v === 'false') return false;
-    if (v === 'null' || v === '') return null;
-    if (/^\[.*\]$/.test(v)) return v.slice(1, -1).split(',').map((x) => scalar(x.trim())).filter((x) => x !== null);
-    if (/^-?\d+(\.\d+)?$/.test(v)) return Number(v);
-    return v.replace(/^['"]|['"]$/g, '');
-  };
-  function block(indent) {
-    if (i >= toks.length) return null;
-    if (toks[i].content.startsWith('- ')) {
-      const arr = [];
-      while (i < toks.length && toks[i].indent === indent && toks[i].content.startsWith('- ')) {
-        const rest = toks[i].content.slice(2).trim();
-        i++;
-        const pair = kv(rest);
-        if (pair && rest !== '' && !/^[^:]+:\s*$/.test(rest) === false) { /* noop */ }
-        if (pair) {
-          const obj = {};
-          const [k, v] = pair;
-          if (v === '') obj[k] = i < toks.length && toks[i].indent > indent ? block(toks[i].indent) : null;
-          else obj[k] = scalar(v);
-          while (i < toks.length && toks[i].indent > indent && !toks[i].content.startsWith('- ')) {
-            const p2 = kv(toks[i].content);
-            i++;
-            if (!p2) break;
-            obj[p2[0]] = p2[1] === '' ? (i < toks.length && toks[i].indent > indent ? block(toks[i].indent) : null) : scalar(p2[1]);
-          }
-          arr.push(obj);
-        } else {
-          arr.push(scalar(rest));
-        }
-      }
-      return arr;
-    }
-    const obj = {};
-    while (i < toks.length && toks[i].indent === indent && !toks[i].content.startsWith('- ')) {
-      const pair = kv(toks[i].content);
-      i++;
-      if (!pair) break;
-      const [k, v] = pair;
-      obj[k] = v === '' ? (i < toks.length && toks[i].indent > indent ? block(toks[i].indent) : null) : scalar(v);
-    }
-    return obj;
-  }
-  if (!toks.length) return {};
-  return block(toks[0].indent);
+  const value = parseYaml(text);
+  if (value == null) return {};
+  if (typeof value !== 'object' || Array.isArray(value)) throw new Error('report-gate: configuration must be a mapping');
+  return value;
 }
 
 /** Read a JSON rule pack by name from packs/. */
@@ -90,9 +36,25 @@ export function loadPack(name, packsDir = ROOT_PACKS) {
 
 /** Read and resolve every pack named in config.packs. */
 export function loadPacks(names, packsDir = ROOT_PACKS) {
-  return (names || []).map((n) => {
-    try { return loadPack(n, packsDir); } catch { return null; }
-  }).filter(Boolean);
+  return (names || []).map((name) => {
+    if (typeof name !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(name)) throw new Error(`report-gate: invalid pack name ${String(name)}`);
+    try { return loadPack(name, packsDir); } catch (error) { throw new Error(`report-gate: cannot load pack ${name}`, { cause: error }); }
+  });
+}
+
+/** Validate effective configuration before checking a report. */
+export function validateConfig(config) {
+  if (!['advisory', 'enforce'].includes(config.mode)) throw new Error('report-gate: mode must be advisory or enforce');
+  if (!['auto', 'zh', 'en'].includes(config.lang)) throw new Error('report-gate: lang must be auto, zh or en');
+  for (const key of ['budget', 'retryLimit']) {
+    if (!Number.isSafeInteger(config[key]) || config[key] < 0) throw new Error(`report-gate: ${key} must be a nonnegative integer`);
+  }
+  for (const key of ['packs', 'allowlist', 'labelPatterns']) {
+    if (!Array.isArray(config[key]) || config[key].some((item) => typeof item !== 'string')) throw new Error(`report-gate: ${key} must be an array of strings`);
+  }
+  for (const pattern of config.labelPatterns) new RegExp(pattern);
+  if (config.semantic?.enabled) throw new Error('report-gate: semantic review is not implemented');
+  return config;
 }
 
 /** Find `.dsh/report-readability.{yml,yaml,json}` walking up from `startDir`. */

@@ -5,7 +5,7 @@ import { loadSession } from './session.js';
 import { lastAssistantText, textOf } from './events.js';
 import { checkReport } from './engine.js';
 import { formatResult } from './report.js';
-import { loadConfigFromDir, loadPacks, mergeConfig, DEFAULT_CONFIG, parseSimpleYaml } from './config.js';
+import { loadConfigFromDir, loadPacks, mergeConfig, DEFAULT_CONFIG, parseSimpleYaml, validateConfig } from './config.js';
 
 function parseArgs(argv) {
   const out = { _: [], json: false, config: null, lang: null, mode: null };
@@ -46,12 +46,18 @@ function main() {
   try { events = loadSession(sessionPath); } catch (e) { console.error(`cannot read session: ${e.message}`); return 2; }
   const target = lastAssistantText(events);
   if (!target) { console.error('no assistant text found in session'); return 2; }
-  const fileCfg = args.config ? readConfigFile(args.config) : loadConfigFromDir(process.cwd());
-  const overrides = {};
-  if (args.lang) overrides.lang = args.lang;
-  if (args.mode) overrides.mode = args.mode;
-  const config = mergeConfig(DEFAULT_CONFIG, fileCfg, overrides);
-  const packs = loadPacks(config.packs);
+  let config, packs;
+  try {
+    const fileCfg = args.config ? readConfigFile(args.config) : loadConfigFromDir(process.cwd());
+    const overrides = {};
+    if (args.lang) overrides.lang = args.lang;
+    if (args.mode) overrides.mode = args.mode;
+    config = validateConfig(mergeConfig(DEFAULT_CONFIG, fileCfg, overrides));
+    packs = loadPacks(config.packs);
+  } catch (error) {
+    console.error(`invalid configuration: ${error.message}`);
+    return 2;
+  }
   const result = checkReport(textOf(target), { events, reportSeq: target.seq, config, packs });
   if (args.json) console.log(JSON.stringify(result, null, 2));
   else console.log(formatResult(result));
