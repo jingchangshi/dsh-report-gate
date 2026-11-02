@@ -9,6 +9,8 @@ import ToolRuntime from '@deepseek-ai/dsh-tools';
 import AgentRegistry from '@deepseek-ai/dsh-agent';
 import AgentLoop from '@deepseek-ai/dsh-agent-loop';
 import Commands from '@deepseek-ai/dsh-commands';
+import { agentEvents } from '@deepseek-ai/dsh-agent';
+import { createScope } from '@deepseek-ai/dsh-scope';
 import * as reportGate from '../src/dsh/index.js';
 
 class ScriptedAdapter extends LlmAdapter {
@@ -101,4 +103,22 @@ test('real DSH enforce mode steers one rewrite and resets budget next turn', asy
     assert.equal(adapter.requests.length, 4);
     assert.match(JSON.stringify(adapter.requests[3].messages), /S0/);
   } finally { await ctx.fiber.dispose(); }
+});
+
+test('a host-level listener receives agent events from a preset-scoped agent', async () => {
+  const host = new Context();
+  const seen = [];
+  host.on('agent/turn-stopping', ({ turn }) => seen.push(['host', turn]));
+  const presetKey = {};
+  const preset = createScope(host, presetKey);
+  const sibling = createScope(host, {});
+  sibling.ctx.on('agent/turn-stopping', () => seen.push(['sibling']));
+  const agent = {};
+  const agentScope = createScope(host, agent, { parent: presetKey });
+  try {
+    await agentEvents(agentScope.ctx, agent).serial('agent/turn-stopping', { turn: 7, signal: new AbortController().signal });
+    assert.deepEqual(seen, [['host', 7]], 'host plugin sees the preset agent; an unrelated scope does not');
+  } finally {
+    await agentScope.dispose(); await preset.dispose(); await sibling.dispose(); await host.fiber.dispose();
+  }
 });
