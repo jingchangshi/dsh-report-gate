@@ -1,0 +1,5 @@
+# Patch layer installed by `dsh plugin --profile <name> add <this package>`.
+# Inserts the report-gate plugin into the profile composition.
+- insert:
+    - id: report-gate
+      name: dsh-report-gate
