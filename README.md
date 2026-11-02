@@ -1,12 +1,13 @@
 # dsh-report-gate
 
-A **readability gate for AI task reports**: catch undefined internal labels (`M5`, `D2`, `S0` …) and jargon that only ever appeared in AI↔AI traffic (`policy`, `eligibility` …) before a report reaches a human. Runs as a **DSH plugin** or as a **standalone CLI** over session logs.
+DSH plugin and standalone CLI for checking AI task reports for potentially unexplained labels, terms, and writing-style issues. Findings are heuristic and do not establish factual correctness.
 
-See [README.zh.md](README.zh.md) for the full Chinese guide (primary). Quick start:
+Install in the Web profile with `dsh plugin --profile web add github:jingchangshi/dsh-report-gate`. After a top-level agent turn, `/report` shows the most recent automatic check. On an agent without an in-memory check, it checks the most recent assistant message instead. The default mode is advisory. Opt-in `enforce` requests a bounded rewrite **after the original message has been published**, so it is not a pre-publication gate.
 
-```bash
-node src/cli.js check /path/to/session.jsonl.zstd --lang zh   # 0=PASS 1=FAIL
-node --test test/*.test.js
+Configuration is discovered per session working directory from `.dsh/report-readability.yml`. See [README.zh.md](README.zh.md) for installation, configuration, and limitations, and [DESIGN.md](docs/DESIGN.md) for implementation notes.
+
+```sh
+npm ci
+npm test
+node src/cli.js check /path/to/session.jsonl.zstd --lang zh
 ```
-
-Design: channel classification (human vs backstage, from `source.kind`) + a grounding ledger (what this human was actually shown) + tiered checks (Tier-1 internal labels = hard; Tier-2 identifiers = advisory; Tier-3 ordinary words = semantic candidates) + config-driven, domain-neutral rule packs. Defaults to `advisory` and fails open. Enforcement hooks `agent/turn-stopping` (steer a rewrite) and offers `/report`; subagent sessions are skipped.

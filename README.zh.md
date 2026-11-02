@@ -1,98 +1,59 @@
 # dsh-report-gate
 
-**给"AI 任务汇报"加一道人类可读性闸门**：在汇报到达人之前，抓出读者看不懂的内部代号（M5、D2、S0…）和只在 AI 之间出现过、从未对人解释的术语（policy、eligibility…）。可作为 **DSH 插件**运行，也有**独立 CLI** 可直接检查会话日志。
+DSH 插件检查任务报告中可能难以理解的内部代号和术语，并提供 `/report` 查询结果。它还提供独立 CLI，可以检查已保存的 DSH 会话日志。检查结果是启发式提示，不能证明一份报告对所有读者都易懂。
 
-## 它解决什么问题
+## 安装
 
-一次多智能体（Lead + 架构/评审/子代理）完成的编译任务，最后给人类的总结里满是内部代号和后台术语，但人从未参与那些 AI 对话，于是读不懂。根因不是"模型没写清楚"，而是系统没有：①"人已被告知哪些词"的清单；②交付前的可读性检查；③人与 AI 消息的通道区分。本插件把这三件事落成机制。
+需要 Node.js 22.19 及以上的 22.x 版本，或 Node.js 24 及以上版本。将插件安装到 Web profile：
 
-## 设计：引擎 + 规则包 + 每仓配置
-
-```
-会话事件 ──► 通道判定 ──► 已解释词清单 ─┐
-(human vs backstage)                  ├─► 分档检查 ─► 结论(FAIL/PASS) ─► CLI 报告 / DSH 拦截
-规则包(generic/ste-zh/ste-en/mlir) ───┘
+```sh
+dsh plugin --profile web add github:jingchangshi/dsh-report-gate
 ```
 
-- **通道判定**：DSH 在每个 user 消息上记录了来源（`source.kind`）。`user` = 人自己说的；`agent-message`（队友）、`subagent-settled`（子任务通知）、`tool/result`、系统提示 = 后台。只有"人自己说的 + 助手正文"算人类可见通道。
-- **已解释词清单**：从**原始日志**（不是压缩后的视图）里，收集"人亲口说过的词"和"紧邻处带解释的词"。**见过 ≠ 已解释**：一闪而过没解释的词仍算未解释。
-- **分档检查**：
-  - **Tier-1 内部代号**（形如 `[A-Za-z]{1,2}\d{1,2}`，如 M5/D2/S0）：人没说过、且报告内未就地定义的 → **可硬拦**。
-  - **Tier-2 其它标识符**（如 `runHIVMCCompileA5`、`920r1`）：仅提示，建议进附录名词表。
-  - **Tier-3 普通词**（如 policy/eligibility）：用"后台高频 × 前台为零"的比例粗筛成候选，最终交给语义判断。
-- **两种模式**：`advisory`（只报告、不拦）与 `enforce`（不过则退回重写）。默认 advisory，避免误伤。
-- **引擎零领域词**：代码里不写死任何 `f16/M5/cc1` 这类词；领域词表与规则都在 `packs/` 和每仓配置里。因此**可移植**、可发布、换仓库只需加一份配置。
+也可以使用已安装的 DSH 源码仓库执行 `pnpm dsh plugin ...`。安装指定版本时，可以在仓库地址后添加 `#<commit>`。`web` profile 支持加载安装的插件；若插件尚未加载，请重启 Web 服务并打开会话。
 
-## 快速开始（独立 CLI，无需装进 DSH）
+## 在会话中使用
 
-```bash
-# 检查一个会话日志（v4 JSONL 或 .zstd），打印人类可读报告
-node src/cli.js check /path/to/session.v4.jsonl.zstd --lang zh
-# 机器可读 + 指定每仓配置
-node src/cli.js check session.jsonl --config examples/.dsh/report-readability.yml --json
-# 退出码：0=PASS，1=FAIL，2=用法错误
+插件在顶层 Agent 的每轮结束时检查该轮最后一条助手回复，不处理子代理。默认 `advisory` 模式只检查，不要求模型重写。输入：
+
+```text
+/report
 ```
 
-对本仓库分析过的真实会话运行，它会列出 14 个内部代号（M5–M8、S0–S5、B5、D1–D3），并在 Tier-3 里给出 policy/eligibility/bundles。
+命令显示当前 Agent 最近一次自动检查的轮次、消息序号和结果。结果保存在内存中：DSH 重启或 Agent 被重新创建后，`/report` 会改为手动检查该会话最近一条助手回复，并在输出中说明这是手动检查。服务日志也记录自动检查的会话 ID、轮次和结果；不记录报告全文。
 
-## 作为 DSH 插件安装与使用
+`enforce` 模式在检查未通过时让 Agent 追加重写，重试次数受 `retryLimit` 限制。**该检查发生在回复已经发布之后**：用户可能先看到原回复，再看到重写。达到重试上限后，`/report` 显示该状态；插件不会无限重试。它不是交付前缓冲或发布门禁。
 
-这是 `dsh.bundle.patch` 形式的插件包（与 `experimental/auto-review` 同构）。
+## 配置
 
-**一次性安装（两种粒度）**：
-```bash
-# A. 装到整个 profile：之后该 profile 下新会话自动生效
-pnpm dsh plugin --profile web add /path/to/dsh-report-gate
-
-# B. 只给某类会话：把 report-gate 行加入对应 agent preset 的 plugins 列表
-```
-
-**会话里怎么用**：
-- **自动**：插件在 `agent/turn-stopping` 检查本轮"面向人的结束语"；`mode: enforce` 时若不过 → 向模型退回重写。用户零操作。
-- **手动**：`/report` 命令检查当前汇报。
-- 只对**顶层、面向人**的轮次生效；子代理（`origin=subagent`）自动跳过。
-- 改动配置/preset **只影响之后创建的会话**；在跑的会话要重开。
-
-> 适配层在 `src/dsh/index.js`，用容错结构对接 `agent/turn-stopping`、`agent.steer`、`ctx.commands`。若你的 DSH 版本 API 不同，只需调整该文件里的少量访问器；核心引擎与规则包不依赖 DSH。
-
-## 配置参考（`<repo>/.dsh/report-readability.yml`）
+在会话工作目录或其上级目录放置 `.dsh/report-readability.yml`，例如：
 
 ```yaml
-mode: advisory     # advisory | enforce
-lang: auto         # auto | zh | en
-budget: 2          # 允许的未解释标识符数量，超过才 FAIL（enforce 时拦截）
+mode: advisory           # advisory 或 enforce
+lang: auto               # auto、zh 或 en
+budget: 2                # 未解释标识符的提示预算
+retryLimit: 2            # 每轮最多重写次数
 packs: [generic, ste-zh, ste-en, mlir]
-allowlist: [Triton, Cube, BarAll]   # 叠加项目专用词
-semantic: { enabled: false, model: null }   # 预留：交给新读者模型判普通词
-retryLimit: 2
+allowlist: [Triton, Cube]
 ```
 
-## 规则包
+每次检查都按该会话当前工作目录加载配置。无文件时使用默认值。配置格式错误、规则包不存在或检查失败时，自动检查记入服务日志，`/report` 返回错误；不会中断原任务。`semantic.enabled` 是预留配置，当前不支持开启，开启时会报告错误。
 
-| 包 | 作用 |
-|---|---|
-| `generic` | 语言无关的默认：代号正则 + 语言/硬件原语白名单（f16/i32/x86/cc1/L2…） |
-| `ste-zh` | 简化技术中文（改编自 hai-simplified-technical / ASD-STE100）：含糊词、包装动词、套话、句长、的字密度、标点 |
-| `ste-en` | 同一体系的英文子集：vague words、wrapper verbs、filler、sentence length |
-| `mlir` | 可选：MLIR/硬件专有词扩展白名单 |
+## 检查内容与限制
 
-> `ste-zh` / `ste-en` 的规则体系参考了 [hai-simplified-technical](https://github.com/hylarucoder/hai-stack/tree/main/skills/hai-simplified-technical)（ASD-STE100 简化技术英语中文版），针对"任务汇报"做了裁剪与降级（意见性规则默认 soft，只有真正含糊/包装动词才 hard）。
+- **内部代号**：人未使用过、报告中也未定义的代号会列为第一类发现。
+- **其他标识符**：结合会话中人已使用或已解释的词给出候选。超过 `budget` 也会使结果为 FAIL；`enforce` 模式据此可能要求重写。
+- **普通词**：后台高频、前台未出现的词仅作为候选，当前没有接入独立语义模型，可能漏报或误报。
+- **风格**：中英文规则包借鉴 `hai-simplified-technical`。部分风格规则是硬规则，会影响 FAIL；建议先使用默认的提示模式观察实际效果。
 
-## 可移植性与边界
+术语识别、首次解释判断和语言分词都采用启发式方法；引用、跨语言表达、代码片段、普通缩写可能导致误判。`/report` 的 FAIL 不表示技术结论错误，也不保证 PASS 的报告一定可读。
 
-- **不绑服务器**：纯 ESM 包，零运行时依赖；引擎不含任何领域词；换仓库只需一份 `.dsh/report-readability.yml`。
-- **失败开放**：advisory 为默认；DSH 适配层所有异常都吞掉并记录，绝不因本插件中断会话。
-- **已知局限**：Tier-3 普通词靠频率粗筛 + 语义判断（低频词如 eligibility 可能漏，需 `semantic` 接新读者模型）；分词以拉丁标识符为主，纯中文新造词靠风格/词表；DSH 适配层需按你的版本核对 API。
+## 独立 CLI 与开发
 
-## 开发与测试
-
-```bash
-node --test test/*.test.js     # 20 个测试：terms/ledger/engine/style/config/cli
-npm run demo                   # 在样例会话上跑 CLI
+```sh
+npm ci
+npm test
+node src/cli.js check /path/to/session.v4.jsonl.zstd --lang zh
 ```
 
-目录：`src/`（events/terms/ledger/style/engine/config/report/session/cli + dsh 适配层）、`packs/`、`test/`、`examples/.dsh/`、`docs/DESIGN.md`。
-
-## 与"只靠提示词"的区别
-
-提示词能让模型"尽量写清楚"，但**不能**：①知道这个特定人已知哪些词；②在交付前强制拦截。本插件用"已解释词清单 + 分档检查 + 交付前拦截"补上这两点——提示词是第 0 层，本插件是机制层。
+`.zstd` 日志需要系统上的 `zstd` 命令。CLI 输出 PASS 时退出码为 0，FAIL 为 1，输入或配置错误为 2。具体设计见 [DESIGN.md](docs/DESIGN.md)。
